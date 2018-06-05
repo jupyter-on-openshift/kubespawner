@@ -107,6 +107,8 @@ class KubeSpawner(Spawner):
             # Our default port is 8888
             self.port = 8888
 
+        self.cached_profile_list = []
+
     k8s_api_threadpool_workers = Integer(
         # Set this explicitly, since this is the default in Python 3.5+
         # but not in 3.4
@@ -863,15 +865,23 @@ class KubeSpawner(Spawner):
         """
     )
 
-    profile_list = List(
-        trait=Dict(),
-        default_value=None,
-        minlen=0,
+    profile_list = Union([
+            Integer(),
+            Callable()
+        ],
+        allow_none=True,
         config=True,
         help="""
         List of profiles to offer for selection by the user.
 
-        Signature is: List(Dict()), where each item is a dictionary that has two keys:
+        Instead of a list, this could also be a callable that takes as one
+        parameter the current spawner instance and returns the list.
+        The callable will be called asynchronously if it returns a future.
+        Note that the interface of the spawner class is not deemed stable
+        across versions, so using this functionality might cause your
+        JupyterHub or kubespawner upgrades to break.
+
+        Signature is: List(Dict()), where each item is a dictionary that has the keys:
         - 'display_name': the human readable display name (should be HTML safe)
         - 'description': Optional description of this profile displayed to the user.
         - 'kubespawner_override': a dictionary with overrides to apply to the KubeSpawner
@@ -1291,10 +1301,14 @@ class KubeSpawner(Spawner):
             '' when no `profile_list` has been defined
             The rendered template (using jinja2) when `profile_list` is defined.
         '''
-        if not self.profile_list:
+        if callable(self.profile_list):
+            self.cached_profile_list = yield gen.maybe_future(self.profile_list(self))
+        else:
+            self.cached_profile_list = self.profile_list
+        if not self.cached_profile_list:
             return ''
         profile_form_template = Environment(loader=BaseLoader).from_string(self.profile_form_template)
-        return profile_form_template.render(profile_list=self.profile_list)
+        return profile_form_template.render(profile_list=self.cached_profile_list)
 
     def options_from_form(self, formdata):
         """get the option selected by the user on the form
@@ -1319,11 +1333,11 @@ class KubeSpawner(Spawner):
             the selected user option
         """
 
-        if not self.profile_list:
+        if not self.cached_profile_list:
             return formdata
         # Default to first profile if somehow none is provided
         selected_profile = int(formdata.get('profile', [0])[0])
-        options = self.profile_list[selected_profile]
+        options = self.cached_profile_list[selected_profile]
         self.log.debug("Applying KubeSpawner override for profile '%s'", options['display_name'])
         kubespawner_override = options.get('kubespawner_override', {})
         for k, v in kubespawner_override.items():
