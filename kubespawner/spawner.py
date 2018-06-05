@@ -866,7 +866,7 @@ class KubeSpawner(Spawner):
     )
 
     profile_list = Union([
-            Dict(),
+            List(),
             Callable()
         ],
         allow_none=True,
