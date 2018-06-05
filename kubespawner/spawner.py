@@ -876,7 +876,7 @@ class KubeSpawner(Spawner):
 
         Instead of a list, this could also be a callable that takes as one
         parameter the current spawner instance and returns the list.
-        The callable will be called asynchronously if it returns a future.
+        The callable cannot return a future and should return the result.
         Note that the interface of the spawner class is not deemed stable
         across versions, so using this functionality might cause your
         JupyterHub or kubespawner upgrades to break.
@@ -1302,7 +1302,7 @@ class KubeSpawner(Spawner):
             The rendered template (using jinja2) when `profile_list` is defined.
         '''
         if callable(self.profile_list):
-            self.cached_profile_list = yield gen.maybe_future(self.profile_list(self))
+            self.cached_profile_list = self.profile_list(self)
         else:
             self.cached_profile_list = self.profile_list
         if not self.cached_profile_list:
